@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tank Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 40px;
+    background-color: #f4f7f9;
+    color: #333;
+  }
+
+  h1 {
+    color: #2c3e50;
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .card {
+    border: none;
+    padding: 20px;
+    margin: 10px auto;
+    border-radius: 10px;
+    background: linear-gradient(to right, #74ebd5, #acb6e5);
+    color: #1f2d3d;
+    font-size: 1.2rem;
+    width: 90%;
+    max-width: 700px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  }
+
+  #controls, #sensor_id {
+    text-align: center;
+    margin: 1rem 0;
+    font-weight: bold;
+  }
+
+  select {
+    padding: 5px 10px;
+    font-size: 1rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    margin-left: 5px;
+    background-color: #ffffff;
+  }
+
+  #chart-container {
+    width: 95%;
+    max-width: 1000px;
+    height: 500px;
+    margin: 2rem auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.1);
+  }
+
+  canvas {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  h2 {
+    text-align: center;
+    color: #2c3e50;
+  }
+
+</style>
+
+</head>
+<body>
+
+  <h1>Tank Dashboard</h1>
+  <div class="card" id="tank level">Current Tank level: --</div>
+  <div class="card" id="update time">Last update time: --</div>
+  <div class="card" id="system status">System Status: --</div>
+
+  <div id="controls">
+    Show last 
+    <select id="limit-select">
+      <option value="10">10</option>
+      <option value="20" selected>20</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select> entries
+  </div>
+
+  <div id="sensor_id">
+    Sensor:
+    <select id="sensor-select">
+      <option value="1">1</option>
+      <option value="2">2</option>
+    </select>
+  </div>
+
+  <h2>Tank Level Over Time</h2>
+  <div id="chart-container">
+    <canvas id="tankLevelChart"></canvas>
+  </div>
+
+  
+<script>
+  const ws1 = new WebSocket(`wss://${location.host}/ws/data/1`);
+  const ws2 = new WebSocket(`wss://${location.host}/ws/data/2`);
+
+  let currentSensor = "1";
+  let latestData = { 1: null, 2: null };
+
+  const ctx = document.getElementById('tankLevelChart').getContext('2d');
+  const tankLevelChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Tank Level',
+        data: [],
+        fill: false,
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1
+      }]
+    },
+    options: {
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'second' },
+          title: { display: true, text: 'Time' }
+        },
+        y: {
+          title: { display: true, text: 'Tank Level' },
+          min: 0
+        }
+      },
+      plugins: { legend: { display: true } },
+      responsive: true,
+      maintainAspectRatio: false
+    }
+  });
+
+  function updateDOM(data) {
+    document.getElementById("tank level").textContent = `Current Tank level: ${data.tank_level}`;
+    document.getElementById("update time").textContent = `Last update time: ${data.update_time}`;
+    document.getElementById("system status").textContent = `System Status: ${data.system_status}`;
+  }
+
+  function handleSocketMessage(sensorID, event) {
+    const data = JSON.parse(event.data);
+    latestData[sensorID] = data;
+    if (sensorID == currentSensor) {
+      updateDOM(data);
+    }
+  }
+
+  ws1.onmessage = (event) => handleSocketMessage(1, event);
+  ws2.onmessage = (event) => handleSocketMessage(2, event);
+
+  async function updateChart(limit, sensorID) {
+    try {
+      const response = await fetch(`/api/history?limit=${limit}&sensorID=${sensorID}`);
+      const data = await response.json();
+      const sorted = data.slice().reverse();
+
+      tankLevelChart.data.labels = sorted.map(entry => new Date(entry.timestamp));
+      tankLevelChart.data.datasets[0].data = sorted.map(entry => entry.tank_level);
+      tankLevelChart.update();
+    } catch (err) {
+      console.error("Failed to update chart:", err);
+    }
+  }
+
+  // Event listeners
+  document.getElementById('limit-select').addEventListener('change', () => {
+    updateChart(document.getElementById('limit-select').value, currentSensor);
+  });
+
+  document.getElementById('sensor-select').addEventListener('change', () => {
+    currentSensor = document.getElementById('sensor-select').value;
+    const limit = document.getElementById('limit-select').value;
+    updateChart(limit, currentSensor);
+    if (latestData[currentSensor]) {
+      updateDOM(latestData[currentSensor]);
+    }
+  });
+
+  // Initial load
+  window.addEventListener("load", () => {
+    updateChart(document.getElementById('limit-select').value, currentSensor);
+  });
+
+  // Periodically update chart
+  setInterval(() => {
+    updateChart(document.getElementById('limit-select').value, currentSensor);
+  }, 5000);
+</script>
+</body>
+</html>
+
