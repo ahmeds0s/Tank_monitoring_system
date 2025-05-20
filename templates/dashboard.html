@@ -104,8 +104,8 @@
 
   
 <script>
-  const ws1 = new WebSocket(`wss://${location.host}/ws/data/1`);
-  const ws2 = new WebSocket(`wss://${location.host}/ws/data/2`);
+  const ws1 = new WebSocket(`ws://${location.host}/ws/data/1`);
+  const ws2 = new WebSocket(`ws://${location.host}/ws/data/2`);
 
   let currentSensor = "1";
   let latestData = { 1: null, 2: null };

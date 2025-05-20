@@ -15,13 +15,45 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 from auth import authenticate_user, create_access_token, decode_token
 from datetime import timedelta
 from db import init_db, insert_sensor_data
 from fastapi.templating import Jinja2Templates
 import sqlite3
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global dashboard_open
+    print("starting collecting data offline")
+    task = asyncio.create_task(collecting_data())
+    yield
+
+    print("app shutting down")
+    await task
+
+
+app = FastAPI(lifespan=lifespan)
+dashboard_open = False
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
+async def collecting_data():
+    while True:
+        if not dashboard_open:
+            get_data_from_ard(1)
+            print("collecting data.......")
+            await asyncio.sleep(0.5)
+            get_data_from_ard(2)
+            await asyncio.sleep(1)
+        await asyncio.sleep(1)
+
+
 templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
@@ -34,13 +66,10 @@ app.add_middleware(
 
 
 ####          database ###
-@app.on_event("startup")
-def startup():
-    init_db()
 
 
 @app.get("/api/history")
-def get_history(limit: int = 10, sensor_id: int = 1):
+async def get_history(limit: int = 10, sensor_id: int = 1):
     with sqlite3.connect("sensor_data.db") as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -72,7 +101,7 @@ templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/history", response_class=HTMLResponse)
-def history_page(request: Request):
+async def history_page(request: Request):
     return templates.TemplateResponse("history.html", {"request": request})
 
 
@@ -130,10 +159,12 @@ async def favicon():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    global dashboard_open
+    dashboard_open = True
     token = request.cookies.get("access_token")
     if not token or not decode_token(token):
         return RedirectResponse(url="/")
-    data = get_data_from_ard(2)
+    data = get_data_from_ard(1)
 
     """  json += "\"Sensor ID\":\"" + String("1") + "\",";
   json += "\"Timestamp\":\"" + String("20:25") + "\",";
@@ -146,7 +177,7 @@ async def dashboard(request: Request):
         "title": "System Dashboard",
         "stats": {
             "tank_level": data["Tank level"],
-            "update_time": timedelta(int(data["Timestamp"]) / 1000),
+            "update_time": str(timedelta(seconds=int(data["Timestamp"]) / 1000)),
             "system_status": data["Status"],
         },
     }
@@ -156,14 +187,14 @@ async def dashboard(request: Request):
 
 
 @app.get("/api/data")
-async def get_data():
+async def get_data(sensor_id: int):
     # Simulate changing values
-    data = get_data_from_ard()
+    data = get_data_from_ard(sensor_id)
     data = {
         "title": "System Dashboard",
         "stats": {
             "tank_level": data["Tank level"],
-            "update_time": 80,
+            "update_time": str(timedelta(seconds=int(data["Timestamp"]) / 1000)),
             "system_status": data["Status"],
         },
     }
@@ -181,7 +212,7 @@ async def websocket_endpoint(websocket: WebSocket, sensor_id: int):
             payload = {
                 "sensor_id": sensor_id,
                 "tank_level": data["Tank level"],
-                "update_time": timedelta(int(data["Timestamp"]) / 1000),
+                "update_time": str(timedelta(seconds=int(data["Timestamp"]) / 1000)),
                 "system_status": data["Status"],
                 "Timestamp": data.get("Timestamp"),  # Optional
             }
@@ -191,6 +222,8 @@ async def websocket_endpoint(websocket: WebSocket, sensor_id: int):
 
     except WebSocketDisconnect:
         print(f"Client disconnected from sensor {sensor_id}")
+        global dashboard_open
+        dashboard_open = False
 
 
 # IP of the Arduino
@@ -222,7 +255,7 @@ def get_data_from_ard(sensor_id: int):
         print(e)
         data = {
             "Sensor ID": "1",
-            "Timestamp": "----",
+            "Timestamp": "0",
             "Tank level": -1,
             "Status": "inaccessable",
         }
