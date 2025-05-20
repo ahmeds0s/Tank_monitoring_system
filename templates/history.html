@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sensor Data History</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      background: #f5f5f5;
+    }
+    h1 {
+      text-align: center;
+    }
+    #controls {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+    th, td {
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    th {
+      background: #333;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sensor Data History</h1>
+
+  <div id="controls">
+    Show last 
+    <select id="limit-select">
+      <option value="10">10</option>
+      <option value="20" selected>20</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    entries
+  </div>
+
+  <div id="sensor_id">
+    sensor: 
+    <select id="sensor-select">
+      <option value="1">1</option>
+      <option value="2" selected>2</option>
+    </select>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Sensor ID</th>
+        <th>Tank Level</th>
+        <th>System Status</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody id="data-body">
+      <!-- Table rows go here -->
+    </tbody>
+  </table>
+
+
+<script>
+  const select = document.getElementById('limit-select');
+  const sensorSelect = document.getElementById('sensor-select');
+  const tbody = document.getElementById('data-body');
+
+  async function loadHistory(limit, sensorId) {
+    try {
+      const response = await fetch(`/api/history?limit=${limit}&sensor_id=${sensorId}`);
+      const data = await response.json();
+      tbody.innerHTML = '';
+      data.forEach(entry => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${entry.sensor_id}</td>
+          <td>${entry.tank_level}</td>
+          <td>${entry.system_status}</td>
+          <td>${new Date(entry.timestamp).toLocaleString()}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    } catch (error) {
+      console.error("Failed to load history:", error);
+    }
+  }
+
+  function refreshHistory() {
+    loadHistory(select.value, sensorSelect.value);
+  }
+
+  select.addEventListener("change", refreshHistory);
+  sensorSelect.addEventListener("change", refreshHistory);
+
+  // Initial load and periodic refresh
+  refreshHistory();
+  setInterval(refreshHistory, 5000);
+</script>
+
+</body>
+</html>
+
