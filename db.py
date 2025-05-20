@@ -12,7 +12,7 @@ def init_db():
                 sensor_id TEXT,
                 tank_level REAL,
                 system_status TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                timestamp DATETIME DEFAULT (datetime('now','localtime')) 
             )
         """)
         conn.commit()
